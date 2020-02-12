@@ -7,6 +7,7 @@ import pytesseract
 import re
 import io
 import base64
+from string import whitespace
 
 import requests
 
@@ -29,6 +30,8 @@ curDir = os.getcwd()
 pngs = os.path.join(curDir, "Img")
 
 pytesseract.pytesseract.tesseract_cmd = r'/opt/local/bin/tesseract'
+
+FGUrl = "http://192.168.16.6:7158/testdata/input/"
 
 matchD = r'\d+\d+\.+\d+\d+\.+\d+\d+\d+\d'
 matchMFD = r'[a-zA-Z]+[Ff]+[a-zA-Z]'
@@ -76,7 +79,7 @@ def saveComponent(img, fileName):
     plt.savefig(os.path.join(pngs,fileName))
 
 def crop(img, vThresh = 0.3, hThresh = 0.3):
-    saveComponent(img,"test.png")
+    #saveComponent(img,"test.png")
     sumV = np.sum(img, axis=1)
     sumH = np.sum(img, axis=0)
     
@@ -200,6 +203,10 @@ def searchDate(dateString):
     datesIS = []
     datesIE = []
 
+    #dateString.replace(" ", "")
+    #https://stackoverflow.com/questions/20991605/how-to-remove-white-spaces-from-a-string-in-python
+    dateString = dateString.translate(dict.fromkeys(map(ord, whitespace)))
+
     for i in re.finditer(matchD,dateString):
         dates.append(i.group(0))
         datesIS.append(i.start())
@@ -299,6 +306,7 @@ def handlePOIDImg():
 
         return "<html></html>"
 
+'''
 @app.route('/getDates', methods=['POST'])
 def getDates():
     if request.method == 'POST':
@@ -338,6 +346,57 @@ def getDates():
             datesData["EXP"] = dates[1]
 
         return jsonify(datesData)
+'''
+@app.route('/sendImg', methods=['POST'])
+def sendImg():
+    if request.method == 'POST':
+
+        data = request.get_json()
+        #print(data)
+
+        POID = data["POID"]
+        imgDat = data["Img"]
+        imgStr = base64.b64decode(imgDat)
+
+        print(POID)
+
+        #filename = os.path.join(pngs,"TestRead.png")
+        #with open(filename, 'wb') as f:
+        #    f.write(imgStr)
+
+        imageDataP = PIL.Image.open(io.BytesIO(imgStr)).convert('RGB')
+        imageDataN = np.array(imageDataP, dtype=np.uint8)
+        #imageDataC = cv2.imdecode(imageDataN, cv2.IMREAD_UNCHANGED)
+
+        print(imageDataN.shape)
+        print(imageDataN)
+        #print(imageDataC)
+
+        #saveImage(imageDataN, "TestPng3.png")
+        #saveComponent(imageDataN,"f")
+        dates = readDates(imageDataN)
+
+        print(dates)
+
+        if(len(dates) != 0):
+            datesData = dict()
+            datesData["POID"] = POID
+
+            if(len(dates)==1):
+                datesData["EXP"] = dates[0]
+            elif(len(dates)==2):
+                datesData["MDF"] = dates[0]
+                datesData["EXP"] = dates[1]
+
+            reqFG = requests.post(url=FGUrl,json=datesData,headers={"Content-Type": "application/json"})
+            print(reqFG.json())
+
+            return jsonify(reqFG.json())
+        else:
+            responseDat = dict()
+            responseDat["resultCode"] = "00001"
+            responseDat["resultMessage"] = "fail"
+            return jsonify(responseDat)
 
 @app.route('/POIDImg', methods=['POST'])
 def Img():
@@ -372,6 +431,17 @@ def Img():
         #res = requests.post()
 
         return "<html></html>"
+
+@app.route('/override', methods=['POST'])
+def override():
+    if request.method == 'POST':
+        data = request.get_json()
+        print(data)
+    
+        reqFG = requests.post(url=FGUrl,json=data,headers={"Content-Type": "application/json"})
+        print(reqFG.json())
+
+        return jsonify(reqFG.json())
 
 @app.route('/testRead', methods=['POST'])
 def testRead():
